@@ -421,7 +421,7 @@
     if (e.button === 2) tempErase = true;
 
     // long-press = temporary erase (touch)
-    lpTimer = setTimeout(() => { tempErase = true; }, 350);
+    lpTimer = setTimeout(() => { tempErase = true; }, 1000);
 
     if (measureMode) {
       measureStart = p; measureEnd = p;
@@ -529,3 +529,4 @@
   </script>
 </body>
 </html>
+
