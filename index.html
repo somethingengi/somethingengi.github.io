@@ -202,9 +202,19 @@
   const fenceColor   = $('fenceColor');
   const applySettings= $('applySettings');
 
+  // --- Long-press erase tuning ---
+  const LP_DELAY = 700;      // ms to hold still before erase kicks in (tune 600–900)
+  const HOLD_MOVE_TOL = 10;  // px of drift allowed during the hold
+
   // --- Tool state ---
-  let tool = Tile.Wall; // default
+  let tool = Tile.Wall;        // current selected tool
   let measureMode = false;
+  let dragging = false, lastCol=-1, lastRow=-1;
+
+  // long-press state
+  let lpTimer = null;          // timer handle
+  let lpStart = null;          // {x,y} position at pointerdown
+  let tempErase = false;       // becomes true after long-press fires
 
   function setTool(t) {
     tool = t;
@@ -216,7 +226,7 @@
     on(toolFenceBtn, t===Tile.Fence);
     on(toolEraseBtn, t==='erase');
     on(toolMeasureBtn, measureMode);
-    stat(); // update status text if measuring
+    stat();
   }
 
   toolWallBtn.onclick   = ()=> setTool(Tile.Wall);
@@ -243,15 +253,13 @@
     if (e.key === 'Escape') { toggleMenu(false); closeModalIO(); closeModalSet(); }
   });
 
-  // --- Import/Export modal ---
+  // --- Modals ---
   function openModalIO(content='') { ta.value = content; modalIO.style.display='flex'; modalIO.setAttribute('aria-hidden','false'); }
   function closeModalIO() { modalIO.style.display='none'; modalIO.setAttribute('aria-hidden','true'); }
   closeMi.onclick = closeModalIO;
 
-  // --- Settings modal ---
   function openModalSet() {
-    colsInp.value = cols;
-    rowsInp.value = rows;
+    colsInp.value = cols; rowsInp.value = rows;
     wallColor.value  = Palette[Tile.Wall];
     doorColor.value  = Palette[Tile.Door];
     objColor.value   = Palette[Tile.Obj];
@@ -293,7 +301,7 @@
   $('copyJson').onclick = async () => { try { await navigator.clipboard.writeText(ta.value); } catch {} };
   $('loadJson').onclick = () => { try { fromJSON(ta.value); closeModalIO(); } catch(e){ alert(e.message); } };
 
-  // --- Drawing / grid render ---
+  // --- Canvas sizing & draw ---
   function resizeCanvas() {
     const hBar = document.querySelector('.topbar').offsetHeight;
     const w = window.innerWidth;
@@ -373,12 +381,7 @@
     statEl.textContent = `${cols}×${rows} | ${count} tiles`;
   }
 
-  // Painting / measuring logic
-  let dragging = false, lastCol=-1, lastRow=-1;
-  let tempErase = false;        // held erase (right-click or long-press)
-  let lpTimer = null;           // long-press timer
-  let measureStart = null, measureEnd = null;
-
+  // Helpers
   function cellFromClient(x,y) {
     const rect = c.getBoundingClientRect();
     const cx = Math.floor((x - rect.left) / cellPx);
@@ -386,18 +389,12 @@
     if (cx < 0 || cy < 0 || cx >= cols || cy >= rows) return null;
     return { cx, cy };
   }
-
-  function effectiveTool() {
-    if (tempErase) return 'erase';
-    return tool;
-    }
-
+  function effectiveTool() { return tempErase ? 'erase' : tool; }
   function paintAt(cx, cy, toolVal) {
     const idx = cy*cols + cx;
     if (toolVal === 'erase') grid[idx] = Tile.Empty;
     else grid[idx] = toolVal;
   }
-
   function linePaint(x0,y0,x1,y1, toolVal) {
     let dx = Math.abs(x1-x0), sx = x0<x1 ? 1 : -1;
     let dy = -Math.abs(y1-y0), sy = y0<y1 ? 1 : -1;
@@ -411,17 +408,23 @@
     }
   }
 
+  // Prevent desktop context menu; right-click = temp erase helper
   c.addEventListener('contextmenu', e => e.preventDefault());
+
+  // --- Pointer events with hold-still long-press erase ---
+  let measureStart = null, measureEnd = null;
 
   c.addEventListener('pointerdown', (e) => {
     const p = cellFromClient(e.clientX, e.clientY);
     if (!p) return;
 
-    // right-click = temporary erase (desktop)
+    // Desktop helper: right-click starts erase immediately
     if (e.button === 2) tempErase = true;
 
-    // long-press = temporary erase (touch)
-    lpTimer = setTimeout(() => { tempErase = true; }, 1000);
+    // Start long-press detection (touch/pen): only flips to erase if held still
+    lpStart = { x: e.clientX, y: e.clientY };
+    clearTimeout(lpTimer);
+    lpTimer = setTimeout(() => { tempErase = true; }, LP_DELAY);
 
     if (measureMode) {
       measureStart = p; measureEnd = p;
@@ -431,11 +434,23 @@
 
     dragging = true;
     lastCol = p.cx; lastRow = p.cy;
-    paintAt(p.cx, p.cy, effectiveTool()); draw(); stat();
+    paintAt(p.cx, p.cy, effectiveTool());
+    draw(); stat();
   });
 
   c.addEventListener('pointermove', (e) => {
     if (!dragging) return;
+
+    // Cancel long-press if user starts moving beyond tolerance before it fires
+    if (lpTimer && lpStart) {
+      const dx = e.clientX - lpStart.x;
+      const dy = e.clientY - lpStart.y;
+      if (dx*dx + dy*dy > HOLD_MOVE_TOL*HOLD_MOVE_TOL) {
+        clearTimeout(lpTimer);
+        lpTimer = null; // continue current stroke without flipping to erase
+      }
+    }
+
     const p = cellFromClient(e.clientX, e.clientY);
     if (!p) return;
 
@@ -455,6 +470,7 @@
     dragging = false;
     tempErase = false;
     clearTimeout(lpTimer); lpTimer = null;
+    lpStart = null;
   }
   window.addEventListener('pointerup', endStroke);
   window.addEventListener('pointercancel', endStroke);
@@ -529,4 +545,3 @@
   </script>
 </body>
 </html>
-
