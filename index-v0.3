@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <title>Grid Designer</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#111111">
+  <style>
+    :root { --bg:#111; --fg:#eee; --grid:#2a2a2a; --bar:#181818; --btn:#2a2a2a; --btnh:#3a3a3a; --hi:#4caf50; }
+    * { box-sizing: border-box; }
+    html, body { margin:0; height:100%; background:var(--bg); color:var(--fg); font-family:system-ui, Arial, sans-serif; }
+    .topbar {
+      position:sticky; top:0; z-index:10; background:var(--bar);
+      display:flex; align-items:center; gap:.5rem; padding:.5rem .5rem;
+      border-bottom:1px solid #000;
+    }
+    .tools { display:flex; gap:.5rem; align-items:center; }
+    .spacer { flex:1 }
+    .stat { opacity:.75; font-size:.9rem; margin-right:.5rem; }
+    button {
+      background:var(--btn); color:var(--fg);
+      border:1px solid #000; padding:.55rem .75rem; border-radius:.6rem; font-weight:600;
+    }
+    button:active, button:hover { background:var(--btnh); }
+    .on { outline:2px solid var(--hi); outline-offset: 0; }
+    #canvasWrap { touch-action:none; position:relative; }
+    canvas { display:block; width:100vw; height:calc(100vh - 60px); background:#121212; }
+
+    .modal { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; padding:1rem; z-index:30; }
+    .card { background:#1b1b1b; border:1px solid #000; border-radius:.9rem; padding:1rem; max-width:820px; width:100%; }
+    .card h3 { margin:0 0 .5rem; }
+    textarea, input[type="number"], input[type="color"] {
+      background:#0f0f0f; color:#ddd; border:1px solid #000; border-radius:.5rem; padding:.5rem;
+    }
+    textarea { width:100%; height:240px; }
+    .row { display:flex; gap:.5rem; margin-top:.5rem; align-items:center; }
+    .row > label { min-width:120px; }
+    .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap:.5rem; }
+    .small { font-size:.85rem; opacity:.75; }
+
+    .menu-wrap { position:relative; }
+    .menu {
+      position:absolute; right:0; top:calc(100% + 6px);
+      background:#1b1b1b; border:1px solid #000; border-radius:.6rem;
+      min-width:220px; display:none; flex-direction:column; padding:.25rem; z-index:20;
+      box-shadow:0 8px 24px rgba(0,0,0,.35);
+    }
+    .menu.open { display:flex; }
+    .menu button { text-align:left; width:100%; background:transparent; border:0; padding:.6rem .7rem; border-radius:.45rem; }
+    .menu button:hover { background:#262626; }
+    .menu hr { border:0; border-top:1px solid #242424; margin:.25rem 0; }
+    footer { text-align:center; font-size:0.8em; opacity:0.6; padding:.4rem 0; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="tools">
+      <button id="toolWall"  title="Wall">🧱</button>
+      <button id="toolDoor"  title="Door">🚪</button>
+      <button id="toolObj"   title="Object">📦</button>
+      <button id="toolFence" title="Fence">🚧</button>
+      <button id="toolErase" title="Erase">🧽</button>
+      <button id="toolMeasure" title="Measure area">📏</button>
+      <button id="clear"     title="Clear grid">♻️</button>
+    </div>
+    <div class="spacer"></div>
+    <div class="stat" id="stat"></div>
+
+    <div class="menu-wrap">
+      <button id="overflow" aria-haspopup="true" aria-expanded="false" title="Options">⋮</button>
+      <div id="menu" class="menu" role="menu" aria-label="Options">
+        <button id="mExport" role="menuitem">📤 Export JSON</button>
+        <button id="mImport" role="menuitem">📥 Import JSON</button>
+        <button id="mShare"  role="menuitem">🔗 Share Link</button>
+        <button id="mPng"    role="menuitem">🖼 Save PNG</button>
+        <hr>
+        <button id="mSettings" role="menuitem">⚙️ Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="canvasWrap"><canvas id="c" aria-label="Grid canvas"></canvas></div>
+
+  <!-- Import/Export modal -->
+  <div class="modal" id="mi" aria-hidden="true">
+    <div class="card" role="dialog" aria-modal="true" aria-labelledby="miTitle">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;">
+        <h3 id="miTitle">Save / Load</h3>
+        <button id="closeMi" title="Close">✖</button>
+      </div>
+      <p class="small">Copy this JSON somewhere safe. To load, paste JSON here and press “Load from JSON”.</p>
+      <textarea id="ta" spellcheck="false"></textarea>
+      <div class="row">
+        <button id="copyJson">Copy JSON</button>
+        <button id="loadJson">Load from JSON</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings modal -->
+  <div class="modal" id="ms" aria-hidden="true">
+    <div class="card" role="dialog" aria-modal="true" aria-labelledby="msTitle">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;">
+        <h3 id="msTitle">Settings</h3>
+        <button id="closeMs" title="Close">✖</button>
+      </div>
+
+      <div class="grid2">
+        <div class="row">
+          <label for="colsInp">Columns</label>
+          <input type="number" id="colsInp" min="4" max="200" step="1">
+        </div>
+        <div class="row">
+          <label for="rowsInp">Rows</label>
+          <input type="number" id="rowsInp" min="4" max="200" step="1">
+        </div>
+
+        <div class="row">
+          <label for="wallColor">Wall color</label>
+          <input type="color" id="wallColor">
+        </div>
+        <div class="row">
+          <label for="doorColor">Door color</label>
+          <input type="color" id="doorColor">
+        </div>
+        <div class="row">
+          <label for="objColor">Object color</label>
+          <input type="color" id="objColor">
+        </div>
+        <div class="row">
+          <label for="fenceColor">Fence color</label>
+          <input type="color" id="fenceColor">
+        </div>
+      </div>
+
+      <p class="small" style="margin-top:.75rem;">Changing grid size clears the current design.</p>
+      <div class="row" style="justify-content:flex-end;">
+        <button id="applySettings">Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <footer>© 2025 YourName. All rights reserved.</footer>
+
+  <script>
+  // --- PWA install (offline) ---
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(console.error);
+  }
+
+  // --- Tile types & colors (user-editable via Settings) ---
+  const Tile = { Empty:0, Wall:1, Door:2, Obj:3, Fence:4 };
+  const Palette = {
+    [Tile.Wall]:  '#4caf50',
+    [Tile.Door]:  '#f44336',
+    [Tile.Obj]:   '#ff9800',
+    [Tile.Fence]: '#9e9e9e'
+  };
+
+  // --- Grid model (defaults) ---
+  let cols = 32;
+  let rows = 20;
+  let grid = new Uint8Array(cols * rows); // 0..4 types
+
+  // --- Canvas setup ---
+  const c = document.getElementById('c');
+  const ctx = c.getContext('2d', { alpha:false, desynchronized:true });
+  const DPR = Math.max(1, Math.min(3, devicePixelRatio || 1));
+  let cellPx = 24;
+
+  // --- UI refs ---
+  const $ = (id)=>document.getElementById(id);
+  const toolWallBtn  = $('toolWall');
+  const toolDoorBtn  = $('toolDoor');
+  const toolObjBtn   = $('toolObj');
+  const toolFenceBtn = $('toolFence');
+  const toolEraseBtn = $('toolErase');
+  const toolMeasureBtn = $('toolMeasure');
+  const clearBtn     = $('clear');
+  const statEl       = $('stat');
+
+  const overflowBtn  = $('overflow');
+  const menuEl       = $('menu');
+  const mExport      = $('mExport');
+  const mImport      = $('mImport');
+  const mShare       = $('mShare');
+  const mPng         = $('mPng');
+  const mSettings    = $('mSettings');
+
+  const modalIO      = $('mi');
+  const ta           = $('ta');
+  const closeMi      = $('closeMi');
+
+  const modalSet     = $('ms');
+  const closeMs      = $('closeMs');
+  const colsInp      = $('colsInp');
+  const rowsInp      = $('rowsInp');
+  const wallColor    = $('wallColor');
+  const doorColor    = $('doorColor');
+  const objColor     = $('objColor');
+  const fenceColor   = $('fenceColor');
+  const applySettings= $('applySettings');
+
+  // --- Tool state ---
+  let tool = Tile.Wall; // default
+  let measureMode = false;
+
+  function setTool(t) {
+    tool = t;
+    measureMode = (t === 'measure');
+    const on = (btn, yes)=> btn.classList.toggle('on', !!yes);
+    on(toolWallBtn,  t===Tile.Wall);
+    on(toolDoorBtn,  t===Tile.Door);
+    on(toolObjBtn,   t===Tile.Obj);
+    on(toolFenceBtn, t===Tile.Fence);
+    on(toolEraseBtn, t==='erase');
+    on(toolMeasureBtn, measureMode);
+    stat(); // update status text if measuring
+  }
+
+  toolWallBtn.onclick   = ()=> setTool(Tile.Wall);
+  toolDoorBtn.onclick   = ()=> setTool(Tile.Door);
+  toolObjBtn.onclick    = ()=> setTool(Tile.Obj);
+  toolFenceBtn.onclick  = ()=> setTool(Tile.Fence);
+  toolEraseBtn.onclick  = ()=> setTool('erase');
+  toolMeasureBtn.onclick= ()=> setTool(measureMode ? Tile.Wall : 'measure');
+
+  clearBtn.onclick      = ()=> { grid.fill(0); draw(); stat(); };
+  setTool(Tile.Wall);
+
+  // --- Menu open/close ---
+  function toggleMenu(open) {
+    const willOpen = (open === undefined) ? !menuEl.classList.contains('open') : open;
+    menuEl.classList.toggle('open', willOpen);
+    overflowBtn.setAttribute('aria-expanded', String(willOpen));
+  }
+  overflowBtn.addEventListener('click', (e)=> { e.stopPropagation(); toggleMenu(); });
+  document.addEventListener('click', (e)=> {
+    if (!menuEl.contains(e.target) && e.target !== overflowBtn) toggleMenu(false);
+  });
+  document.addEventListener('keydown', (e)=> {
+    if (e.key === 'Escape') { toggleMenu(false); closeModalIO(); closeModalSet(); }
+  });
+
+  // --- Import/Export modal ---
+  function openModalIO(content='') { ta.value = content; modalIO.style.display='flex'; modalIO.setAttribute('aria-hidden','false'); }
+  function closeModalIO() { modalIO.style.display='none'; modalIO.setAttribute('aria-hidden','true'); }
+  closeMi.onclick = closeModalIO;
+
+  // --- Settings modal ---
+  function openModalSet() {
+    colsInp.value = cols;
+    rowsInp.value = rows;
+    wallColor.value  = Palette[Tile.Wall];
+    doorColor.value  = Palette[Tile.Door];
+    objColor.value   = Palette[Tile.Obj];
+    fenceColor.value = Palette[Tile.Fence];
+    modalSet.style.display='flex'; modalSet.setAttribute('aria-hidden','false');
+  }
+  function closeModalSet() { modalSet.style.display='none'; modalSet.setAttribute('aria-hidden','true'); }
+  closeMs.onclick = closeModalSet;
+
+  applySettings.onclick = () => {
+    const nCols = Math.max(4, Math.min(200, parseInt(colsInp.value||cols)));
+    const nRows = Math.max(4, Math.min(200, parseInt(rowsInp.value||rows)));
+    Palette[Tile.Wall]  = wallColor.value || Palette[Tile.Wall];
+    Palette[Tile.Door]  = doorColor.value || Palette[Tile.Door];
+    Palette[Tile.Obj]   = objColor.value  || Palette[Tile.Obj];
+    Palette[Tile.Fence] = fenceColor.value|| Palette[Tile.Fence];
+
+    if (nCols !== cols || nRows !== rows) {
+      cols = nCols; rows = nRows;
+      grid = new Uint8Array(cols * rows); // clear (simplest)
+    }
+    closeModalSet();
+    draw(); stat(); resizeCanvas();
+  };
+
+  // Menu actions
+  mExport.onclick = () => { toggleMenu(false); openModalIO(toJSON()); };
+  mImport.onclick = () => { toggleMenu(false); openModalIO(''); };
+  mShare.onclick  = async () => {
+    toggleMenu(false);
+    const hash = btoa(unescape(encodeURIComponent(toJSON())));
+    const url = location.origin + location.pathname + '#'+hash;
+    if (navigator.share) { try { await navigator.share({ title:'Grid Designer', url }); return; } catch {} }
+    openModalIO(url);
+  };
+  mPng.onclick = () => { toggleMenu(false); savePNG(); };
+  mSettings.onclick = () => { toggleMenu(false); openModalSet(); };
+
+  $('copyJson').onclick = async () => { try { await navigator.clipboard.writeText(ta.value); } catch {} };
+  $('loadJson').onclick = () => { try { fromJSON(ta.value); closeModalIO(); } catch(e){ alert(e.message); } };
+
+  // --- Drawing / grid render ---
+  function resizeCanvas() {
+    const hBar = document.querySelector('.topbar').offsetHeight;
+    const w = window.innerWidth;
+    const h = window.innerHeight - hBar;
+    const sizeX = Math.floor(w / cols);
+    const sizeY = Math.floor(h / rows);
+    cellPx = Math.max(8, Math.min(sizeX, sizeY));
+    const cw = cols * cellPx, ch = rows * cellPx;
+    c.style.width = cw + 'px';
+    c.style.height = ch + 'px';
+    c.width = Math.floor(cw * DPR);
+    c.height = Math.floor(ch * DPR);
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+    draw(); stat();
+  }
+
+  function draw() {
+    ctx.fillStyle = '#101010';
+    ctx.fillRect(0,0,c.width, c.height);
+
+    // tiles
+    for (let r=0; r<rows; r++) {
+      for (let col=0; col<cols; col++) {
+        const v = grid[r*cols + col];
+        if (v !== Tile.Empty) {
+          ctx.fillStyle = Palette[v] || '#ffffff';
+          ctx.fillRect(col*cellPx, r*cellPx, cellPx, cellPx);
+        }
+      }
+    }
+    // grid lines
+    ctx.strokeStyle = '#2a2a2a';
+    ctx.lineWidth = 1;
+    for (let x=0; x<=cols; x++) {
+      const X = x*cellPx + 0.5;
+      ctx.beginPath(); ctx.moveTo(X,0); ctx.lineTo(X,rows*cellPx); ctx.stroke();
+    }
+    for (let y=0; y<=rows; y++) {
+      const Y = y*cellPx + 0.5;
+      ctx.beginPath(); ctx.moveTo(0,Y); ctx.lineTo(cols*cellPx,Y); ctx.stroke();
+    }
+
+    // measure overlay
+    if (measureMode && measureStart && measureEnd) {
+      const x0 = Math.min(measureStart.cx, measureEnd.cx) * cellPx;
+      const y0 = Math.min(measureStart.cy, measureEnd.cy) * cellPx;
+      const x1 = (Math.max(measureStart.cx, measureEnd.cx)+1) * cellPx;
+      const y1 = (Math.max(measureStart.cy, measureEnd.cy)+1) * cellPx;
+      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      ctx.fillRect(x0, y0, x1-x0, y1-y0);
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x0+1, y0+1, x1-x0-2, y1-y0-2);
+
+      const wCells = Math.abs(measureEnd.cx - measureStart.cx) + 1;
+      const hCells = Math.abs(measureEnd.cy - measureStart.cy) + 1;
+      const label = `${wCells} × ${hCells}`;
+      ctx.font = 'bold 16px system-ui, Arial';
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      const tw = ctx.measureText(label).width + 10;
+      const th = 22;
+      const cxm = (x0 + x1) / 2, cym = (y0 + y1) / 2;
+      ctx.fillRect(cxm - tw/2, cym - th/2, tw, th);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(label, cxm - (tw-10)/2, cym + 7);
+    }
+  }
+
+  function stat() {
+    if (measureMode && measureStart && measureEnd) {
+      const w = Math.abs(measureEnd.cx - measureStart.cx)+1;
+      const h = Math.abs(measureEnd.cy - measureStart.cy)+1;
+      statEl.textContent = `${cols}×${rows} | Measuring: ${w}×${h}`;
+      return;
+    }
+    const count = grid.reduce((a,b)=>a+(b?1:0),0);
+    statEl.textContent = `${cols}×${rows} | ${count} tiles`;
+  }
+
+  // Painting / measuring logic
+  let dragging = false, lastCol=-1, lastRow=-1;
+  let tempErase = false;        // held erase (right-click or long-press)
+  let lpTimer = null;           // long-press timer
+  let measureStart = null, measureEnd = null;
+
+  function cellFromClient(x,y) {
+    const rect = c.getBoundingClientRect();
+    const cx = Math.floor((x - rect.left) / cellPx);
+    const cy = Math.floor((y - rect.top) / cellPx);
+    if (cx < 0 || cy < 0 || cx >= cols || cy >= rows) return null;
+    return { cx, cy };
+  }
+
+  function effectiveTool() {
+    if (tempErase) return 'erase';
+    return tool;
+    }
+
+  function paintAt(cx, cy, toolVal) {
+    const idx = cy*cols + cx;
+    if (toolVal === 'erase') grid[idx] = Tile.Empty;
+    else grid[idx] = toolVal;
+  }
+
+  function linePaint(x0,y0,x1,y1, toolVal) {
+    let dx = Math.abs(x1-x0), sx = x0<x1 ? 1 : -1;
+    let dy = -Math.abs(y1-y0), sy = y0<y1 ? 1 : -1;
+    let err = dx + dy;
+    while (true) {
+      paintAt(x0,y0, toolVal);
+      if (x0===x1 && y0===y1) break;
+      const e2 = 2*err;
+      if (e2 >= dy) { err += dy; x0 += sx; }
+      if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+  }
+
+  c.addEventListener('contextmenu', e => e.preventDefault());
+
+  c.addEventListener('pointerdown', (e) => {
+    const p = cellFromClient(e.clientX, e.clientY);
+    if (!p) return;
+
+    // right-click = temporary erase (desktop)
+    if (e.button === 2) tempErase = true;
+
+    // long-press = temporary erase (touch)
+    lpTimer = setTimeout(() => { tempErase = true; }, 350);
+
+    if (measureMode) {
+      measureStart = p; measureEnd = p;
+      dragging = true; draw(); stat();
+      return;
+    }
+
+    dragging = true;
+    lastCol = p.cx; lastRow = p.cy;
+    paintAt(p.cx, p.cy, effectiveTool()); draw(); stat();
+  });
+
+  c.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const p = cellFromClient(e.clientX, e.clientY);
+    if (!p) return;
+
+    if (measureMode) {
+      measureEnd = p; draw(); stat();
+      return;
+    }
+
+    if (p.cx !== lastCol || p.cy !== lastRow) {
+      linePaint(lastCol, lastRow, p.cx, p.cy, effectiveTool());
+      lastCol = p.cx; lastRow = p.cy;
+      draw(); stat();
+    }
+  });
+
+  function endStroke() {
+    dragging = false;
+    tempErase = false;
+    clearTimeout(lpTimer); lpTimer = null;
+  }
+  window.addEventListener('pointerup', endStroke);
+  window.addEventListener('pointercancel', endStroke);
+
+  // --- JSON (include palette + size) ---
+  function toJSON() {
+    return JSON.stringify({
+      cols, rows,
+      palette: {
+        wall:  Palette[Tile.Wall],
+        door:  Palette[Tile.Door],
+        obj:   Palette[Tile.Obj],
+        fence: Palette[Tile.Fence],
+      },
+      data: Array.from(grid)
+    });
+  }
+  function fromJSON(txt) {
+    const obj = JSON.parse(txt);
+    if (!obj || !obj.cols || !obj.rows || !obj.data) throw new Error('Invalid JSON');
+
+    cols = obj.cols|0; rows = obj.rows|0;
+    grid = new Uint8Array(cols * rows);
+    for (let i=0;i<grid.length && i<obj.data.length;i++) grid[i] = obj.data[i] | 0;
+
+    if (obj.palette) {
+      Palette[Tile.Wall]  = obj.palette.wall  || Palette[Tile.Wall];
+      Palette[Tile.Door]  = obj.palette.door  || Palette[Tile.Door];
+      Palette[Tile.Obj]   = obj.palette.obj   || Palette[Tile.Obj];
+      Palette[Tile.Fence] = obj.palette.fence || Palette[Tile.Fence];
+    }
+    resizeCanvas();
+    draw(); stat();
+  }
+
+  // --- PNG export (no grid lines) ---
+  function savePNG() {
+    const tmp = document.createElement('canvas');
+    tmp.width  = cols * cellPx;
+    tmp.height = rows * cellPx;
+    const tctx = tmp.getContext('2d', { alpha:false });
+    tctx.fillStyle = '#101010';
+    tctx.fillRect(0,0,tmp.width,tmp.height);
+    for (let r=0;r<rows;r++){
+      for (let col=0; col<cols; col++){
+        const v = grid[r*cols + col];
+        if (v !== Tile.Empty){
+          tctx.fillStyle = Palette[v] || '#fff';
+          tctx.fillRect(col*cellPx, r*cellPx, cellPx, cellPx);
+        }
+      }
+    }
+    const link = document.createElement('a');
+    link.download = 'grid.png';
+    link.href = tmp.toDataURL('image/png');
+    link.click();
+  }
+
+  // --- Load from URL hash if present ---
+  function tryLoadFromHash() {
+    if (location.hash.length > 1) {
+      try {
+        const json = decodeURIComponent(escape(atob(location.hash.slice(1))));
+        fromJSON(json);
+      } catch {}
+    }
+  }
+
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
+  tryLoadFromHash();
+  </script>
+</body>
+</html>
