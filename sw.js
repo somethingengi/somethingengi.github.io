@@ -1,5 +1,5 @@
 // bump this when you deploy
-const CACHE = 'grid-designer-v6';
+const CACHE = 'grid-designer-v7';
 
 // Explicitly list what you need offline
 const ASSETS = [
@@ -54,3 +54,4 @@ self.addEventListener('fetch', (event) => {
     caches.match(req).then((cached) => cached || fetch(req))
   );
 });
+
