@@ -1,4 +1,4 @@
-const CACHE = 'grid-designer-v4'; // change v3 → v4
+const CACHE = 'grid-designer-v5'; // change v4 → v5
 const ASSETS = [
   './',
   './index.html',
@@ -23,5 +23,6 @@ self.addEventListener('fetch', (e) => {
     caches.match(e.request).then(r => r || fetch(e.request))
   );
 });
+
 
 
