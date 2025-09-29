@@ -1,28 +1,56 @@
-const CACHE = 'grid-designer-v5'; // change v4 → v5
+// bump this when you deploy
+const CACHE = 'grid-designer-v6';
+
+// Explicitly list what you need offline
 const ASSETS = [
-  './',
-  './index.html',
-  './manifest.webmanifest'
-  // add './icon-192.png', './icon-512.png' if you include them
+  '/',                    // root
+  '/index.html',
+  '/manifest.webmanifest',
+  '/sw.js',               // cache the SW file too
+  '/icon-192.png',
+  '/icon-512.png'
+  // add more here if you split code into separate files later
 ];
 
-self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
+// Install: precache
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE).then((cache) => cache.addAll(ASSETS))
+  );
+  self.skipWaiting(); // activate immediately
 });
 
-self.addEventListener('activate', (e) => {
-  e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+// Activate: clean old caches, take control
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(keys.map((k) => (k !== CACHE ? caches.delete(k) : null)))
     )
   );
+  self.clients.claim();
 });
 
-self.addEventListener('fetch', (e) => {
-  e.respondWith(
-    caches.match(e.request).then(r => r || fetch(e.request))
+// Fetch strategy:
+//  - Network-first for HTML (so new index.html is picked up quickly)
+//  - Cache-first fallback for everything else
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+  const isHTML =
+    req.mode === 'navigate' ||
+    (req.headers.get('accept') || '').includes('text/html');
+
+  if (isHTML) {
+    event.respondWith(
+      fetch(req).then((res) => {
+        const copy = res.clone();
+        caches.open(CACHE).then((c) => c.put(req, copy));
+        return res;
+      }).catch(() => caches.match(req))
+    );
+    return;
+  }
+
+  event.respondWith(
+    caches.match(req).then((cached) => cached || fetch(req))
   );
 });
-
-
-
