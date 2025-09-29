@@ -1,8 +1,0 @@
-[{
-      "relation": ["delegate_permission/common.handle_all_urls"],
-      "target": {
-        "namespace": "android_app",
-        "package_name": "io.github.somethingengi.griddesigner",
-        "sha256_cert_fingerprints": ["98:F8:C6:12:F2:5F:9D:E5:4E:D5:C2:22:72:4B:26:5D:DE:A1:3E:C6:02:19:49:AE:95:3A:E4:A5:48:30:F0:B5"]
-      }
-    }]
